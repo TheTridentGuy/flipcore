@@ -5,6 +5,7 @@ import { lockheed, type TunnelState } from "./targets";
 import {
   FORWARD_THRUST, DRAG, MAX_SPEED, TURN_RATE,
   TUNNEL_SOFT_EDGE, TUNNEL_RADIUS, TUNNEL_PUSH,
+  TUNNEL_KILL_EDGE, SIDEWAYS_THRESHOLD,
 } from "./constants";
 import { BTNS } from "../composables/useGameState";
 
@@ -14,8 +15,10 @@ interface GameState {
   speed: Ref<number>;
   started: Ref<boolean>;
   tunnelWarning: Ref<number>;
+  dead: Ref<boolean>;
   fps: Ref<number>;
   kill: () => void;
+  restart: () => void;
 }
 
 export async function init(canvas: HTMLCanvasElement, state: GameState) {
@@ -48,6 +51,15 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
   const vel = new THREE.Vector3();
   const pos = new THREE.Vector3();
 
+  // pre-alloc (these are used all the fucking time)
+  const _forward = new THREE.Vector3();
+  const _shipOffset = new THREE.Vector3();
+  const _closestPoint = new THREE.Vector3();
+  const _lateralVec = new THREE.Vector3();
+  const _camOffset = new THREE.Vector3();
+  const _camLookAt = new THREE.Vector3();
+  const _camUp = new THREE.Vector3();
+
   // tunnel
   const tunnel: TunnelState = {
     center: new THREE.Vector3(),
@@ -57,6 +69,70 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
   // targets
   const { targets, spawnBox, collectFX, updateFX } = lockheed(THREE, scene, tunnel, pos);
   for (let i = 0; i < 8; i++) spawnBox();
+
+  // explosion!!!
+  const EXPLODE_COUNT = 120; // increase for low fps
+  const explodeGeo = new THREE.BufferGeometry();
+  const explodePositions = new Float32Array(EXPLODE_COUNT * 3);
+  const explodeColors = new Float32Array(EXPLODE_COUNT * 3);
+  const explodeVelocities: THREE.Vector3[] = [];
+  for (let i = 0; i < EXPLODE_COUNT; i++) explodeVelocities.push(new THREE.Vector3());
+  explodeGeo.setAttribute("position", new THREE.BufferAttribute(explodePositions, 3));
+  explodeGeo.setAttribute("color", new THREE.BufferAttribute(explodeColors, 3));
+  const explodeMat = new THREE.PointsMaterial({ size: 0.35, vertexColors: true, transparent: true, opacity: 1, depthWrite: false });
+  const explodePoints = new THREE.Points(explodeGeo, explodeMat);
+  explodePoints.visible = false;
+  scene.add(explodePoints);
+  let explodeTimer = 0;
+  const EXPLODE_DURATION = 2.5;
+
+  function triggerExplosion(origin: THREE.Vector3) {
+    const colors = [new THREE.Color("#ff4444"), new THREE.Color("#ff8800"), new THREE.Color("#ffcc00"), new THREE.Color("#ffffff")];
+    for (let i = 0; i < EXPLODE_COUNT; i++) {
+      explodePositions[i * 3] = origin.x;
+      explodePositions[i * 3 + 1] = origin.y;
+      explodePositions[i * 3 + 2] = origin.z;
+      const c = colors[Math.floor(Math.random() * colors.length)];
+      explodeColors[i * 3] = c.r;
+      explodeColors[i * 3 + 1] = c.g;
+      explodeColors[i * 3 + 2] = c.b;
+      explodeVelocities[i].set(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+      ).normalize().multiplyScalar(5 + Math.random() * 15);
+    }
+    explodeGeo.attributes.position.needsUpdate = true;
+    explodeGeo.attributes.color.needsUpdate = true;
+    explodePoints.visible = true;
+    explodeMat.opacity = 1;
+    explodeTimer = EXPLODE_DURATION;
+  }
+
+  function updateExplosion(dt: number) {
+    if (explodeTimer <= 0) return;
+    explodeTimer -= dt;
+    for (let i = 0; i < EXPLODE_COUNT; i++) {
+      explodePositions[i * 3] += explodeVelocities[i].x * dt;
+      explodePositions[i * 3 + 1] += explodeVelocities[i].y * dt;
+      explodePositions[i * 3 + 2] += explodeVelocities[i].z * dt;
+      explodeVelocities[i].multiplyScalar(Math.max(0, 1 - 1.5 * dt));
+    }
+    explodeGeo.attributes.position.needsUpdate = true;
+    explodeMat.opacity = Math.max(0, explodeTimer / EXPLODE_DURATION);
+    if (explodeTimer <= 0) explodePoints.visible = false;
+  }
+
+  function dcheck(forward: THREE.Vector3, lateralDist: number) {
+    if (state.dead.value) return;
+    const alignment = Math.abs(forward.dot(tunnel.dir));
+    if (lateralDist >= TUNNEL_KILL_EDGE || alignment < SIDEWAYS_THRESHOLD) {
+      state.dead.value = true;
+      state.kill();
+      triggerExplosion(pos.clone());
+      rocket.visible = false;
+    }
+  }
 
   // game loop
   const clock = new THREE.Clock();
@@ -91,6 +167,15 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
       return;
     }
 
+    if (state.dead.value) {
+      updateExplosion(dt);
+      renderer.render(scene, camera);
+      fpsFrames++;
+      const now = performance.now();
+      if (now - fpsTime >= 1000) { state.fps.value = fpsFrames; fpsFrames = 0; fpsTime = now; }
+      return;
+    }
+
     if (state.engines.left) rocket.rotateY(-TURN_RATE * dt);
     if (state.engines.right) rocket.rotateY(TURN_RATE * dt);
     if (state.engines.top) rocket.rotateX(-TURN_RATE * dt);
@@ -107,8 +192,8 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     }
 
     // physics
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(rocket.quaternion);
-    vel.addScaledVector(forward, FORWARD_THRUST * dt);
+    _forward.set(0, 0, -1).applyQuaternion(rocket.quaternion);
+    vel.addScaledVector(_forward, FORWARD_THRUST * dt);
     vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
     if (vel.length() > MAX_SPEED) vel.setLength(MAX_SPEED);
 
@@ -120,14 +205,17 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     state.speed.value = vel.length();
 
     // tunnel constraints
-    const shipOffset = new THREE.Vector3().subVectors(pos, tunnel.center);
-    const axialDist = shipOffset.dot(tunnel.dir);
-    const closestPoint = tunnel.center.clone().addScaledVector(tunnel.dir, axialDist);
-    const lateralVec = new THREE.Vector3().subVectors(pos, closestPoint);
-    const lateralDist = lateralVec.length();
+    _shipOffset.subVectors(pos, tunnel.center);
+    const axialDist = _shipOffset.dot(tunnel.dir);
+    _closestPoint.copy(tunnel.center).addScaledVector(tunnel.dir, axialDist);
+    _lateralVec.subVectors(pos, _closestPoint);
+    const lateralDist = _lateralVec.length();
+
+    dcheck(_forward, lateralDist);
+
     if (lateralDist > TUNNEL_SOFT_EDGE) {
       const edge = Math.min((lateralDist - TUNNEL_SOFT_EDGE) / (TUNNEL_RADIUS - TUNNEL_SOFT_EDGE), 2);
-      vel.addScaledVector(lateralVec.normalize(), -TUNNEL_PUSH * edge * edge * dt);
+      vel.addScaledVector(_lateralVec.normalize(), -TUNNEL_PUSH * edge * edge * dt);
     }
     const w = lateralDist > TUNNEL_SOFT_EDGE
       ? Math.min((lateralDist - TUNNEL_SOFT_EDGE) / (TUNNEL_RADIUS - TUNNEL_SOFT_EDGE), 1) : 0;
@@ -136,14 +224,14 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     ringMat.opacity = 0.04 + w * 0.18;
 
     // tunnel ring repositioning
-    const playerAxialRing = new THREE.Vector3().subVectors(pos, tunnel.center).dot(tunnel.dir);
+    const playerAxialRing = _shipOffset.subVectors(pos, tunnel.center).dot(tunnel.dir);
     const ringStep = 15;
     const ringBase = Math.ceil(playerAxialRing / ringStep) * ringStep;
     for (let i = 0; i < tunnelRings.length; i++) {
       const ringOffset = ringBase + i * ringStep;
-      const rp = tunnel.center.clone().addScaledVector(tunnel.dir, ringOffset);
-      tunnelRings[i].position.copy(rp);
-      tunnelRings[i].lookAt(rp.clone().add(tunnel.dir));
+      _closestPoint.copy(tunnel.center).addScaledVector(tunnel.dir, ringOffset);
+      tunnelRings[i].position.copy(_closestPoint);
+      tunnelRings[i].lookAt(_closestPoint.x + tunnel.dir.x, _closestPoint.y + tunnel.dir.y, _closestPoint.z + tunnel.dir.z);
     }
 
     // exhaust flicker
@@ -165,7 +253,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
         state.score.value++;
         collectFX(t.position, (t.material as THREE_NS.MeshStandardMaterial).color.getStyle());
         spawnBox(t);
-      } else if (new THREE.Vector3().subVectors(t.position, pos).dot(forward) < -30) {
+      } else if (_shipOffset.subVectors(t.position, pos).dot(_forward) < -30) {
         spawnBox(t);
       }
     }
@@ -173,10 +261,13 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     updateFX(dt);
 
     // camera
-    camTarget.copy(pos).add(new THREE.Vector3(0, 5, 16).applyQuaternion(rocket.quaternion));
+    _camOffset.set(0, 5, 16).applyQuaternion(rocket.quaternion);
+    camTarget.copy(pos).add(_camOffset);
     camera.position.lerp(camTarget, 3 * dt);
-    camera.up.lerp(new THREE.Vector3(0, 1, 0).applyQuaternion(rocket.quaternion), 2 * dt).normalize();
-    camera.lookAt(pos.clone().add(new THREE.Vector3(0, 0, -10).applyQuaternion(rocket.quaternion)));
+    _camUp.set(0, 1, 0).applyQuaternion(rocket.quaternion);
+    camera.up.lerp(_camUp, 2 * dt).normalize();
+    _camLookAt.set(0, 0, -10).applyQuaternion(rocket.quaternion).add(pos);
+    camera.lookAt(_camLookAt);
 
     // follow light
     dirLight.position.set(pos.x + 5, pos.y + 20, pos.z - 5);
@@ -210,6 +301,17 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     camera.updateProjectionMatrix();
   }
 
+  function reset() {
+    pos.set(0, 0, 0); vel.set(0, 0, 0);
+    rocket.quaternion.identity();
+    rocket.visible = true;
+    tunnel.center.set(0, 0, 0); tunnel.dir.set(0, 0, -1);
+    explodePoints.visible = false;
+    explodeTimer = 0;
+    for (const t of targets) spawnBox(t);
+    state.restart();
+  }
+
   // input
   const keyMap = BTNS.reduce<Record<string, string>>((map, btn) => {
     const keys = Array.isArray(btn.key) ? btn.key : [btn.key];
@@ -227,12 +329,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
       state.engines[eng as keyof typeof state.engines] = !state.engines[eng as keyof typeof state.engines];
     }
     if (e.key === " ") { e.preventDefault(); state.kill(); }
-    if (pressed === "r") {
-      pos.set(0, 0, 0); vel.set(0, 0, 0);
-      rocket.quaternion.identity(); state.kill();
-      tunnel.center.set(0, 0, 0); tunnel.dir.set(0, 0, -1);
-      state.tunnelWarning.value = 0;
-    }
+    if (pressed === "r") reset();
   }
 
   // gpad
@@ -267,12 +364,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
             state.engines[eng] = pressed;
           }
           if (i === 4 && pressed) state.kill();
-          if (i === 5 && pressed) {
-            pos.set(0, 0, 0); vel.set(0, 0, 0);
-            rocket.quaternion.identity(); state.kill();
-            tunnel.center.set(0, 0, 0); tunnel.dir.set(0, 0, -1);
-            state.tunnelWarning.value = 0;
-          }
+          if (i === 5 && pressed) reset();
           pb[i] = pressed;
         }
       }
