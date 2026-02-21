@@ -1,6 +1,6 @@
 import type { Ref } from "vue";
 import { nasa } from "./rocket";
-import { stars, buildGrid, buildRings } from "./environment";
+import { stars, buildRings } from "./environment";
 import { lockheed, type TunnelState } from "./targets";
 import {
   FORWARD_THRUST, DRAG, MAX_SPEED, TURN_RATE,
@@ -40,7 +40,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
 
   // environment
   const { starGeo, starCount } = stars(THREE, scene);
-  const grid = buildGrid(THREE, scene);
+  
   const { tunnelRings, ringMat, tunnelNormalColor, tunnelWarnColor } = buildRings(THREE, scene);
 
   // rocket
@@ -280,9 +280,6 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     }
     starGeo.attributes.position.needsUpdate = true;
 
-    // grid follow
-    grid.position.x = Math.round(pos.x / 2.5) * 2.5;
-    grid.position.z = Math.round(pos.z / 2.5) * 2.5;
 
     renderer.render(scene, camera);
     fpsFrames++;
