@@ -1,87 +1,69 @@
 <template>
-  <div class="relative w-full h-full">
+  <div class="relative w-full h-full select-none">
     <NuxtRouteAnnouncer />
-    <canvas ref="canvasEl" id="game" class="block w-full h-full cursor-none" @click="requestLock"></canvas>
+    <canvas ref="canvasEl" class="block w-full h-full"></canvas>
 
-    <div v-if="!locked" class="fixed inset-0 flex items-center justify-center bg-black/60 cursor-pointer z-100" @click="requestLock">
-      <span class="text-4xl text-white">Click to play</span>
+    <div v-if="!started" class="fixed inset-0 flex flex-col items-center justify-center bg-black/80 z-50 cursor-pointer" @click="started = true">
+      <h1 class="text-5xl font-bold text-white mb-2 tracking-tight">FLIPCORE</h1>
+      <p class="text-lg text-white/50 mb-6">Your ship flies forward — toggle boosters to steer</p>
+      <div class="text-white/60 font-mono text-sm space-y-1 text-center mb-8">
+        <p>Keys <span class="text-red-400 font-bold">1</span> <span class="text-yellow-300 font-bold">2</span> <span class="text-blue-400 font-bold">3</span> <span class="font-bold">4</span> — tilt ship</p>
+        <p>SPACE — kill all</p>
+        <p>R — reset pos</p>
+      </div>
+      <p class="text-white/30 animate-pulse">Click or press any key to launch</p>
     </div>
 
-    <div v-if="locked" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[1.6rem] text-white/70 pointer-events-none z-50 [text-shadow:0_0_4px_rgba(0,0,0,0.8)] font-mono leading-none">+</div>
+    <div v-if="started" class="fixed top-4 left-4 font-mono pointer-events-none z-40">
+      <p class="text-3xl font-bold text-white drop-shadow-lg">{{ score }}</p>
+      <p class="text-[10px] text-white/40 tracking-widest">SCORE</p>
+      <p class="text-sm text-white/40 mt-2 tabular-nums">{{ speed.toFixed(1) }} <span class="text-[10px]">m/s</span></p>
+    </div>
 
-    <div class="fixed top-3.5 left-3.5 right-3.5 flex justify-between gap-3 pointer-events-none max-[900px]:flex-col max-[900px]:items-start">
-      <section class="pointer-events-auto py-3 px-3.5">
-        <p class="my-0.5">Score: {{ score }}</p>
-        <p class="my-0.5">Shots: {{ shots }}</p>
-        <p class="my-0.5">Status: {{ statusText }}</p>
-      </section>
-
-      <div class="pointer-events-auto flex gap-1.5">
-        <button
-          v-for="c in colors" :key="c"
-          class="w-5 h-5 rounded-full border border-transparent transition-all duration-150"
-          :class="switches[c] ? 'opacity-100 scale-110' : 'opacity-25'"
-          :style="{ '--sw-color': switchColors[c], backgroundColor: switchColors[c] }"
-          @click="setColor(c)"
-        />
+    <div v-if="started" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+      <div class="grid grid-cols-3 grid-rows-3 gap-1">
+        <div v-for="b in btns" :key="b.name"
+          class="pointer-events-auto cursor-pointer w-11 h-11 border-2 font-mono text-[11px] font-bold flex flex-col items-center justify-center transition-all duration-75"
+          :class="engines[b.name] ? b.on : 'border-white/10 bg-white/5 text-white/20'"
+          :style="{ gridRow: b.row, gridColumn: b.col }"
+          @click="toggle(b.name)"
+        >{{ b.key }}<span class="text-[8px] leading-none">{{ b.arrow }}</span></div>
+        <div class="w-9 h-9 border border-white/10 bg-white/3 flex items-center justify-center text-white/15 text-xs self-center justify-self-center" style="grid-row:2;grid-column:2">◆</div>
       </div>
     </div>
+
+    <div v-if="started" class="fixed bottom-3 right-4 font-mono text-[10px] text-white/20 pointer-events-none z-40 text-right">
+      <p>SPACE kill boosters</p>
+      <p>R reset</p>
+    </div>
+
+    <div v-if="started && tunnelWarning > 0" class="fixed inset-0 pointer-events-none z-30 rounded-3xl"
+      :style="{ boxShadow: `inset 0 0 ${60 + tunnelWarning * 100}px rgba(255,40,40,${tunnelWarning * 0.45})` }" />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 const canvasEl = ref(null);
 const score = ref(0);
-const shots = ref(0);
-const locked = ref(false);
-const switches = reactive({
-  red: true,
-  yellow: false,
-  blue: false,
-  white: false,
-});
-const keys = reactive({
-  w: false,
-  a: false,
-  s: false,
-  d: false,
-});
+const speed = ref(0);
+const started = ref(false);
+const tunnelWarning = ref(0);
+const engines = reactive({ left: false, top: false, right: false, bottom: false });
+const kill = () => engines.left = engines.top = engines.right = engines.bottom = false;
 
-const colors = ["red", "yellow", "blue", "white"];
-const switchColors = { red: "#ff5b5b", yellow: "#ffe28a", blue: "#87bbff", white: "#f7f7f7" };
+const btns = [
+  { name: 'top', key: '2', arrow: '▼', row: 1, col: 2, on: 'border-yellow-400 bg-yellow-400/20 text-yellow-300 shadow-[0_0_16px_rgba(250,204,21,0.5)]' },
+  { name: 'left', key: '1', arrow: '►', row: 2, col: 1, on: 'border-red-400 bg-red-400/20 text-red-300 shadow-[0_0_16px_rgba(248,113,113,0.5)]' },
+  { name: 'right', key: '3', arrow: '◄', row: 2, col: 3, on: 'border-blue-400 bg-blue-400/20 text-blue-300 shadow-[0_0_16px_rgba(96,165,250,0.5)]' },
+  { name: 'bottom', key: '4', arrow: '▲', row: 3, col: 2, on: 'border-gray-200 bg-white/15 text-white shadow-[0_0_16px_rgba(255,255,255,0.35)]' },
+];
 
-const bulletPalette = {
-  red: { color: "#ff5b5b", emissive: "#ff2222" },
-  yellow: { color: "#ffe28a", emissive: "#ffb300" },
-  blue: { color: "#87bbff", emissive: "#1b6dff" },
-  white: { color: "#f7f7f7", emissive: "#d8d8d8" },
-};
-
-const actorPalette = {
-  red: { body: "#ff5b5b", detail: "#ff2222", glow: "#ff4444" },
-  yellow: { body: "#ffe28a", detail: "#ffb300", glow: "#ffcc44" },
-  blue: { body: "#87bbff", detail: "#1b6dff", glow: "#4488ff" },
-  white: { body: "#f8f8f8", detail: "#dfdfdf", glow: "#ffffff" },
-};
-
-const activeColor = ref("red");
-
-function setColor(c) {
-  if (!bulletPalette[c]) return;
-  activeColor.value = c;
-  for (const n of colors) switches[n] = n === c;
+function toggle(name) {
+  if (!started.value) return;
+  engines[name] = !engines[name];
 }
-
-function requestLock() {
-  canvasEl.value?.requestPointerLock();
-}
-
-const statusText = computed(() => {
-  if (keys.w || keys.a || keys.s || keys.d) return "Moving";
-  return "Idle";
-});
 
 let cleanup = () => {};
 
@@ -89,281 +71,394 @@ onMounted(async () => {
   if (!canvasEl.value) return;
 
   const THREE = await import("three");
+  const { default: Stats } = await import("three/addons/libs/stats.module.js");
+
+  const stats = new Stats();
+  stats.showPanel(0);
+  Object.assign(stats.dom.style, {
+    position: "fixed", bottom: "8px", right: "8px", left: "auto", zIndex: "100000", pointerEvents: "none",
+  });
+  document.body.appendChild(stats.dom);
+
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl.value, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#040404");
-  scene.fog = new THREE.Fog("#050505", 14, 80);
+  scene.background = new THREE.Color("#020206");
 
-  const camera = new THREE.PerspectiveCamera(75, 2, 0.1, 200);
+  const camera = new THREE.PerspectiveCamera(55, 2, 0.1, 800);
 
-  const hemi = new THREE.HemisphereLight("#f3f3f3", "#030303", 0.65);
-  scene.add(hemi);
+  scene.add(new THREE.AmbientLight("#1a1a2e", 0.8));
+  const dirLight = new THREE.DirectionalLight("#ffffff", 1.2);
+  dirLight.position.set(5, 20, -5);
+  scene.add(dirLight);
 
-  const dir = new THREE.DirectionalLight("#ffffff", 1.15);
-  dir.position.set(4, 10, 3);
-  dir.castShadow = true;
-  dir.shadow.mapSize.set(1024, 1024);
-  dir.shadow.camera.left = -30;
-  dir.shadow.camera.right = 30;
-  dir.shadow.camera.top = 30;
-  dir.shadow.camera.bottom = -30;
-  scene.add(dir);
+  const grid = new THREE.GridHelper(200, 80, "#0d0d18", "#080812");
+  grid.position.y = -0.5;
+  scene.add(grid);
 
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 200),
-    new THREE.MeshStandardMaterial({ color: "#090909", roughness: 0.95, metalness: 0.05 }),
+  // stars
+  const starCount = 800;
+  const starGeo = new THREE.BufferGeometry();
+  const starBuf = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    starBuf[i * 3] = (Math.random() - 0.5) * 400;
+    starBuf[i * 3 + 1] = (Math.random() - 0.5) * 400;
+    starBuf[i * 3 + 2] = (Math.random() - 0.5) * 400;
+  }
+  starGeo.setAttribute("position", new THREE.BufferAttribute(starBuf, 3));
+  scene.add(new THREE.Points(
+    starGeo,
+    new THREE.PointsMaterial({ color: "#ffffff", size: 0.15, sizeAttenuation: true, transparent: true, opacity: 0.5 }),
+  ));
+
+  // ── Rocket ──
+  const rocket = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: "#b8b8c0", metalness: 0.55, roughness: 0.35, flatShading: true });
+
+  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.48, 2.6, 8), bodyMat);
+  fuselage.rotation.x = Math.PI / 2;
+  rocket.add(fuselage);
+
+  const noseMat = new THREE.MeshStandardMaterial({ color: "#cc2222", metalness: 0.5, roughness: 0.3, flatShading: true });
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.2, 8), noseMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -1.9;
+  rocket.add(nose);
+
+  const bellMat = new THREE.MeshStandardMaterial({ color: "#555", metalness: 0.7, roughness: 0.3, flatShading: true });
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.52, 0.5, 8, 1, true), bellMat);
+  bell.rotation.x = Math.PI / 2;
+  bell.position.z = 1.55;
+  rocket.add(bell);
+
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: "#4488ff", emissive: "#223388", emissiveIntensity: 0.7, metalness: 0.6, roughness: 0.25,
+  });
+  const coreStripe = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 0.12, 8), coreMat);
+  coreStripe.rotation.x = Math.PI / 2;
+  coreStripe.position.z = -0.5;
+  rocket.add(coreStripe);
+
+  const coreLight = new THREE.PointLight("#4488ff", 0.6, 8);
+  coreLight.position.set(0, 0.5, -0.5);
+  rocket.add(coreLight);
+
+  const finMat = new THREE.MeshStandardMaterial({ color: "#999", metalness: 0.5, roughness: 0.4, flatShading: true });
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2 + Math.PI / 4;
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.55), finMat);
+    fin.position.set(Math.cos(a) * 0.52, Math.sin(a) * 0.52, 1.0);
+    fin.rotation.z = a;
+    rocket.add(fin);
+  }
+
+  // main exhaust
+  const exhaustLen = 1.8;
+  const exhaustCone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, exhaustLen, 6),
+    new THREE.MeshBasicMaterial({ color: "#4488ff", transparent: true, opacity: 0.7 }),
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  exhaustCone.rotation.x = Math.PI / 2;
+  exhaustCone.position.z = 1.7 + exhaustLen / 2;
 
-  const gridHelper = new THREE.GridHelper(200, 100, "#1a1a1a", "#111111");
-  scene.add(gridHelper);
+  const exhaustOuter = new THREE.Mesh(
+    new THREE.ConeGeometry(0.48, exhaustLen * 1.3, 6),
+    new THREE.MeshBasicMaterial({ color: "#2244aa", transparent: true, opacity: 0.2 }),
+  );
+  exhaustOuter.rotation.x = Math.PI / 2;
+  exhaustOuter.position.z = 1.7 + exhaustLen * 0.65;
 
-  // pstate
-  let yaw = 0;
-  let pitch = 0;
-  const playerPos = new THREE.Vector3(0, 0, 0);
-  const playerHeight = 2.5;
-  const moveSpeed = 7;
+  const exh = new THREE.Group();
+  exh.add(exhaustCone, exhaustOuter);
+  const exhLight = new THREE.PointLight("#4488ff", 1.2, 8);
+  exhLight.position.z = 2.0;
+  exh.add(exhLight);
+  rocket.add(exh);
 
-  // we can third person this shit later
-  let bodyMat, detailMat, actorGlow;
+  // direction thrusters
+  const ENG = {
+    left:   { pos: [-0.7, 0, 0.3],  fd: [-1, 0, 0], col: "#ff5b5b", em: "#ff2222" },
+    top:    { pos: [0, 0, -0.85],    fd: [0, 0, -1], col: "#ffe28a", em: "#ffaa00" },
+    right:  { pos: [0.7, 0, 0.3],   fd: [1, 0, 0],  col: "#87bbff", em: "#1b6dff" },
+    bottom: { pos: [0, 0, 1.32],    fd: [0, 0, 1],  col: "#e8e8e8", em: "#cccccc" },
+  };
 
-  function buildActor() {
-    const g = new THREE.Group();
+  const eParts = {};
 
-    bodyMat = new THREE.MeshStandardMaterial({
-      color: "#f8f8f8", roughness: 0.42, metalness: 0.06,
-      emissive: "#ffffff", emissiveIntensity: 0.12, flatShading: true,
-    });
-    detailMat = new THREE.MeshStandardMaterial({
-      color: "#dfdfdf", roughness: 0.48,
-      emissive: "#ffffff", emissiveIntensity: 0.06, flatShading: true,
-    });
+  for (const [name, e] of Object.entries(ENG)) {
+    const pod = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.18, 0.22),
+      new THREE.MeshStandardMaterial({ color: e.col, metalness: 0.4, roughness: 0.35 }),
+    );
+    pod.position.set(...e.pos);
+    rocket.add(pod);
 
-    const part = (geo, mat, pos, rot) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(...pos);
-      if (rot) m.rotation.set(...rot);
-      m.castShadow = true;
-      g.add(m);
-    };
+    const strut = new THREE.Mesh(
+      new THREE.BoxGeometry(e.fd[0] ? 0.25 : 0.05, 0.05, e.fd[2] ? 0.25 : 0.05),
+      new THREE.MeshStandardMaterial({ color: "#777", metalness: 0.5, roughness: 0.4 }),
+    );
+    strut.position.set(e.pos[0] * 0.6, 0, e.pos[2] * 0.6);
+    rocket.add(strut);
 
-    part(new THREE.BoxGeometry(0.78, 0.34, 0.5), detailMat, [0, 1.02, 0]);
-    part(new THREE.CylinderGeometry(0.34, 0.5, 1.15, 6, 1), bodyMat, [0, 1.64, 0]);
-    part(new THREE.IcosahedronGeometry(0.35, 0), detailMat, [0, 2.55, 0]);
-    part(new THREE.CylinderGeometry(0.1, 0.12, 0.72, 5, 1), detailMat, [-0.52, 1.88, 0], [0, 0, 0.15]);
-    part(new THREE.CylinderGeometry(0.1, 0.12, 0.72, 5, 1), detailMat, [0.52, 1.88, 0], [0, 0, -0.3]);
-    part(new THREE.CylinderGeometry(0.13, 0.16, 1.0, 5, 1), detailMat, [-0.2, 0.45, 0]);
-    part(new THREE.CylinderGeometry(0.13, 0.16, 1.0, 5, 1), detailMat, [0.2, 0.45, 0]);
+    const fg = new THREE.Group();
+    fg.visible = false;
+    fg.position.set(...e.pos);
 
-    actorGlow = new THREE.PointLight("#ffffff", 0.7, 10, 4);
-    actorGlow.position.set(0, 1.62, 0.3);
-    g.add(actorGlow);
+    const fLen = 0.85;
+    const fCone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, fLen, 6),
+      new THREE.MeshBasicMaterial({ color: e.em, transparent: true, opacity: 0.85 }),
+    );
+    if (e.fd[0] === -1) fCone.rotation.z = Math.PI / 2;
+    else if (e.fd[0] === 1) fCone.rotation.z = -Math.PI / 2;
+    else if (e.fd[2] === -1) fCone.rotation.x = -Math.PI / 2;
+    else if (e.fd[2] === 1) fCone.rotation.x = Math.PI / 2;
+    fCone.position.set(e.fd[0] * fLen / 2, 0, e.fd[2] * fLen / 2);
+    fg.add(fCone);
 
-    return g;
+    const oCone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.2, fLen * 1.2, 6),
+      new THREE.MeshBasicMaterial({ color: e.col, transparent: true, opacity: 0.25 }),
+    );
+    oCone.rotation.copy(fCone.rotation);
+    oCone.position.copy(fCone.position);
+    fg.add(oCone);
+
+    const fLight = new THREE.PointLight(e.em, 1.0, 5);
+    fLight.position.set(e.fd[0] * 0.6, 0, e.fd[2] * 0.6);
+    fg.add(fLight);
+
+    rocket.add(fg);
+    eParts[name] = { flame: fg, cone: fCone, outer: oCone };
   }
 
-  const actor = buildActor();
-  scene.add(actor);
+  scene.add(rocket);
 
-  // gun woo
-  const fpGun = new THREE.Group();
+  // ── Physics ──
+  const vel = new THREE.Vector3();
+  const pos = new THREE.Vector3();
+  const FORWARD_THRUST = 10, DRAG = 0.4, MAX_SPEED = 35, TURN_RATE = 1.0;
 
-  const gunBodyMat = new THREE.MeshStandardMaterial({ color: "#f5f5f5", metalness: 0.35, roughness: 0.4 });
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.5), gunBodyMat);
-  gunBody.position.set(0.3, -0.2, -0.5);
-  gunBody.castShadow = true;
-  fpGun.add(gunBody);
+  // ── Tunnel ──
+  const TUNNEL_RADIUS = 12, TUNNEL_SOFT_EDGE = 7, TUNNEL_PUSH = 15;
+  const tunnelCenter = new THREE.Vector3();
+  const tunnelDir = new THREE.Vector3(0, 0, -1);
+  const tunnelNormalColor = new THREE.Color("#1a3366");
+  const tunnelWarnColor = new THREE.Color("#ff3344");
 
-  const gunBarrelMat = new THREE.MeshStandardMaterial({ color: "#b8b8b8", metalness: 0.55, roughness: 0.3 });
-  const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.35, 10), gunBarrelMat);
-  gunBarrel.rotation.x = Math.PI / 2;
-  gunBarrel.position.set(0.3, -0.18, -0.78);
-  gunBarrel.castShadow = true;
-  fpGun.add(gunBarrel);
+  const tunnelRings = [];
+  const ringMat = new THREE.MeshBasicMaterial({ color: "#1a3366", transparent: true, opacity: 0.05, side: THREE.DoubleSide });
+  for (let i = 0; i < 8; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(TUNNEL_RADIUS, 0.1, 6, 32), ringMat);
+    ring.position.set(0, 0, -(i + 1) * 15);
+    scene.add(ring);
+    tunnelRings.push(ring);
+  }
 
-  camera.add(fpGun);
-  scene.add(camera);
-
-  // race change
-  watch(activeColor, (c) => {
-    const p = actorPalette[c];
-    if (!p) return;
-    bodyMat.color.set(p.body);
-    bodyMat.emissive.set(p.glow);
-    bodyMat.emissiveIntensity = 0.15;
-    detailMat.color.set(p.detail);
-    detailMat.emissive.set(p.glow);
-    detailMat.emissiveIntensity = 0.1;
-    actorGlow.color.set(p.glow);
-    gunBodyMat.color.set(p.body);
-  }, { immediate: true });
-
+  // ── Targets ──
   const targets = [];
-  for (let i = 0; i < 12; i++) {
-    const target = new THREE.Mesh(
-      new THREE.BoxGeometry(0.9, 0.9, 0.9),
-      new THREE.MeshStandardMaterial({ color: "#ff7f7f", roughness: 0.35, metalness: 0.1 }),
+  const boxColors = ["#ff6b6b", "#ffd93d", "#6bcbff", "#c084fc", "#4ade80", "#fb923c"];
+
+  function spawnBox(mesh) {
+    const d = 25 + Math.random() * 40, a = Math.random() * Math.PI * 2, r = Math.random() * TUNNEL_RADIUS * 0.6;
+    const sp = tunnelCenter.clone().addScaledVector(tunnelDir, d);
+    let p1 = new THREE.Vector3().crossVectors(tunnelDir, new THREE.Vector3(0, 1, 0));
+    if (p1.lengthSq() < 0.01) p1.crossVectors(tunnelDir, new THREE.Vector3(1, 0, 0));
+    p1.normalize();
+    const p2 = new THREE.Vector3().crossVectors(tunnelDir, p1).normalize();
+    sp.addScaledVector(p1, Math.cos(a) * r).addScaledVector(p2, Math.sin(a) * r);
+
+    if (mesh) { mesh.position.copy(sp); mesh.userData.baseY = sp.y; return mesh; }
+
+    const c = boxColors[Math.floor(Math.random() * boxColors.length)];
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.25, roughness: 0.4 }),
     );
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 10 + Math.random() * 30;
-    target.position.set(Math.cos(angle) * dist, 0.8 + Math.random() * 1.2, Math.sin(angle) * dist);
-    target.castShadow = true;
-    target.userData = {
-      baseY: target.position.y,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.7 + Math.random() * 0.8,
-    };
-    targets.push(target);
-    scene.add(target);
+    m.position.copy(sp);
+    m.userData.phase = Math.random() * Math.PI * 2;
+    m.userData.baseY = sp.y;
+    const l = new THREE.PointLight(c, 0.4, 5);
+    l.position.y = 0.5;
+    m.add(l);
+    scene.add(m);
+    targets.push(m);
+    return m;
   }
 
-  const bullets = [];
+  for (let i = 0; i < 8; i++) spawnBox();
+
+  //BANG
+  const fxList = [];
+  function collectFX(p, color) {
+    const s = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 12, 8),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, wireframe: true }),
+    );
+    s.position.copy(p);
+    scene.add(s);
+    fxList.push({ mesh: s, life: 0.4 });
+  }
+
+  //L
   const clock = new THREE.Clock();
-  let shootCooldown = 0;
-  let firing = false;
   let raf = 0;
+  const camTarget = new THREE.Vector3();
 
-  function respawnTarget(t) {
-    const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 30;
-    t.position.set(Math.cos(a) * d, 0.8 + Math.random() * 1.2, Math.sin(a) * d);
-    t.material.color.setHSL(Math.random() * 0.08, 0.7, 0.62);
-    t.userData = { baseY: t.position.y, phase: Math.random() * Math.PI * 2, speed: 0.7 + Math.random() * 0.8 };
-  }
+  function animate() {
+    raf = requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
 
-  function shoot() {
-    const bp = bulletPalette[activeColor.value];
-    const b = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 8, 8),
-      new THREE.MeshStandardMaterial({ color: bp.color, emissive: bp.emissive, emissiveIntensity: 0.8 }),
-    );
-    const sp = new THREE.Vector3(0.3, -0.18, -1.0);
-    camera.localToWorld(sp);
-    b.position.copy(sp);
-    scene.add(b);
+    if (!started.value) {
+      const t = clock.getElapsedTime();
+      camera.position.set(Math.sin(t * 0.2) * 8, 4 + Math.sin(t * 0.1) * 2, Math.cos(t * 0.2) * 8);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(0, 0, 0);
+      const ef = 0.7 + Math.random() * 0.5;
+      exhaustCone.scale.set(ef, 0.7 + Math.random() * 0.6, ef);
+      for (const tgt of targets) {
+        tgt.userData.phase += dt;
+        tgt.rotation.y += dt * 0.8;
+        tgt.position.y = tgt.userData.baseY + Math.sin(tgt.userData.phase) * 0.3;
+      }
+      renderer.render(scene, camera);
+      stats.update();
+      return;
+    }
 
-    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-    bullets.push({ mesh: b, velocity: dir.multiplyScalar(40), ttl: 3.0 });
-    shots.value += 1;
+    if (engines.left) rocket.rotateY(-TURN_RATE * dt);
+    if (engines.right) rocket.rotateY(TURN_RATE * dt);
+    if (engines.top) rocket.rotateX(-TURN_RATE * dt);
+    if (engines.bottom) rocket.rotateX(TURN_RATE * dt);
+
+    for (const [name, ep] of Object.entries(eParts)) {
+      const on = engines[name];
+      ep.flame.visible = on;
+      if (on) {
+        const f = 0.7 + Math.random() * 0.6;
+        ep.cone.scale.set(f, 0.6 + Math.random() * 0.8, f);
+        ep.outer.scale.set(f * 1.1, 0.5 + Math.random() * 1, f * 1.1);
+      }
+    }
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(rocket.quaternion);
+    vel.addScaledVector(forward, FORWARD_THRUST * dt);
+    vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+    if (vel.length() > MAX_SPEED) vel.setLength(MAX_SPEED);
+
+    const tfs = vel.dot(tunnelDir);
+    if (tfs < 8) vel.addScaledVector(tunnelDir, 8 - tfs);
+
+    pos.addScaledVector(vel, dt);
+    rocket.position.copy(pos);
+    speed.value = vel.length();
+
+    tunnelDir.lerp(forward, 1.5 * dt).normalize();
+    const shipToCenter = new THREE.Vector3().subVectors(pos, tunnelCenter);
+    tunnelCenter.addScaledVector(tunnelDir, shipToCenter.dot(tunnelDir));
+    const lateralVec = new THREE.Vector3().subVectors(pos, tunnelCenter);
+    const lateralDist = lateralVec.length();
+    if (lateralDist > TUNNEL_SOFT_EDGE) {
+      const edge = Math.min((lateralDist - TUNNEL_SOFT_EDGE) / (TUNNEL_RADIUS - TUNNEL_SOFT_EDGE), 2);
+      vel.addScaledVector(lateralVec.normalize(), -TUNNEL_PUSH * edge * edge * dt);
+    }
+    const w = lateralDist > TUNNEL_SOFT_EDGE
+      ? Math.min((lateralDist - TUNNEL_SOFT_EDGE) / (TUNNEL_RADIUS - TUNNEL_SOFT_EDGE), 1) : 0;
+    tunnelWarning.value = w;
+    ringMat.color.copy(tunnelNormalColor).lerp(tunnelWarnColor, w);
+    ringMat.opacity = 0.04 + w * 0.18;
+
+    for (let i = 0; i < tunnelRings.length; i++) {
+      const rp = tunnelCenter.clone().addScaledVector(tunnelDir, (i + 1) * 15);
+      tunnelRings[i].position.copy(rp);
+      tunnelRings[i].lookAt(rp.clone().add(tunnelDir));
+    }
+
+    const ef = 0.7 + Math.random() * 0.5;
+    exhaustCone.scale.set(ef, 0.7 + Math.random() * 0.6, ef);
+    exhaustOuter.scale.set(ef * 1.1, 0.6 + Math.random() * 0.8, ef * 1.1);
+
+    const anyOn = engines.left || engines.top || engines.right || engines.bottom;
+    coreMat.emissiveIntensity = anyOn ? 1.0 : 0.4 + Math.sin(clock.getElapsedTime() * 2) * 0.2;
+    coreLight.intensity = anyOn ? 1.2 : 0.4;
+
+    for (const t of targets) {
+      t.userData.phase += dt * 1.2;
+      t.rotation.y += dt * 0.7;
+      t.position.y = t.userData.baseY + Math.sin(t.userData.phase) * 0.3;
+      if (pos.distanceTo(t.position) < 2) {
+        score.value++;
+        collectFX(t.position, t.material.color.getStyle());
+        spawnBox(t);
+      } else if (new THREE.Vector3().subVectors(t.position, pos).dot(forward) < -30) {
+        spawnBox(t);
+      }
+    }
+
+    for (let i = fxList.length - 1; i >= 0; i--) {
+      const f = fxList[i];
+      f.life -= dt;
+      const p = 1 - f.life / 0.4, s = 1 + p * 5;
+      f.mesh.scale.setScalar(s);
+      f.mesh.material.opacity = 0.8 * (1 - p);
+      if (f.life <= 0) {
+        scene.remove(f.mesh);
+        f.mesh.geometry.dispose();
+        f.mesh.material.dispose();
+        fxList.splice(i, 1);
+      }
+    }
+
+    camTarget.copy(pos).add(new THREE.Vector3(0, 5, 16).applyQuaternion(rocket.quaternion));
+    camera.position.lerp(camTarget, 3 * dt);
+    camera.up.lerp(new THREE.Vector3(0, 1, 0).applyQuaternion(rocket.quaternion), 2 * dt).normalize();
+    camera.lookAt(pos.clone().add(new THREE.Vector3(0, 0, -10).applyQuaternion(rocket.quaternion)));
+
+    dirLight.position.set(pos.x + 5, pos.y + 20, pos.z - 5);
+
+    const sp = starGeo.attributes.position.array;
+    for (let i = 0; i < starCount; i++) {
+      for (let j = 0; j < 3; j++) {
+        const idx = i * 3 + j, rel = sp[idx] - pos.getComponent(j);
+        if (rel > 200) sp[idx] -= 400;
+        else if (rel < -200) sp[idx] += 400;
+      }
+    }
+    starGeo.attributes.position.needsUpdate = true;
+
+    grid.position.x = Math.round(pos.x / 2.5) * 2.5;
+    grid.position.z = Math.round(pos.z / 2.5) * 2.5;
+
+    renderer.render(scene, camera);
+    stats.update();
   }
 
   function resize() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    renderer.setSize(width, height, false);
-    camera.aspect = width / height;
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
 
-  const switchKeyMap = { "1": "red", "2": "yellow", "3": "blue", "4": "white" };
+  const keyMap = { "1": "left", "2": "top", "3": "right", "4": "bottom" };
 
   const onKeyDown = (e) => {
-    const sw = switchKeyMap[e.key];
-    if (sw && !e.repeat) setColor(sw);
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = true;
-  };
-
-  const onKeyUp = (e) => {
-    const k = e.key.toLowerCase();
-    if (k in keys) keys[k] = false;
-  };
-
-  const onMouseMove = (e) => {
-    if (!locked.value) return;
-    yaw -= e.movementX * 0.002;
-    pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch - e.movementY * 0.002));
-  };
-
-  const onMouseDown = (e) => { if (locked.value && e.button === 0) firing = true; };
-  const onMouseUp = (e) => { if (e.button === 0) firing = false; };
-
-  const onPointerLockChange = () => {
-    locked.value = document.pointerLockElement === canvasEl.value;
-    if (!locked.value) firing = false;
-  };
-
-  function animate() {
-    const dt = Math.min(clock.getDelta(), 0.033);
-
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-
-    if (keys.w) playerPos.addScaledVector(forward, moveSpeed * dt);
-    if (keys.s) playerPos.addScaledVector(forward, -moveSpeed * dt);
-    if (keys.a) playerPos.addScaledVector(right, -moveSpeed * dt);
-    if (keys.d) playerPos.addScaledVector(right, moveSpeed * dt);
-
-    actor.position.set(playerPos.x, 0, playerPos.z);
-    actor.rotation.y = yaw;
-
-    camera.position.set(playerPos.x, playerPos.y + playerHeight, playerPos.z);
-    camera.rotation.order = "YXZ";
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
-
-    dir.position.set(playerPos.x + 4, 10, playerPos.z + 3);
-    dir.target.position.set(playerPos.x, 0, playerPos.z);
-    dir.target.updateMatrixWorld();
-
-    shootCooldown -= dt;
-    if (firing && shootCooldown <= 0) {
-      shootCooldown = 0.15;
-      shoot();
+    if (!started.value) { started.value = true; return; }
+    if (e.repeat) return;
+    const eng = keyMap[e.key];
+    if (eng) engines[eng] = !engines[eng];
+    if (e.key === " ") { e.preventDefault(); kill(); }
+    if (e.key.toLowerCase() === "r") {
+      pos.set(0, 0, 0); vel.set(0, 0, 0);
+      rocket.quaternion.identity(); kill();
+      tunnelCenter.set(0, 0, 0); tunnelDir.set(0, 0, -1);
+      tunnelWarning.value = 0;
     }
-
-    for (const target of targets) {
-      target.userData.phase += target.userData.speed * dt;
-      target.position.y = target.userData.baseY + Math.sin(target.userData.phase) * 0.55;
-      target.rotation.y += dt * (0.4 + target.userData.speed * 0.5);
-    }
-
-    for (let i = bullets.length - 1; i >= 0; i--) {
-      const bullet = bullets[i];
-      bullet.ttl -= dt;
-      bullet.mesh.position.addScaledVector(bullet.velocity, dt);
-
-      let hit = false;
-      for (const target of targets) {
-        if (bullet.mesh.position.distanceTo(target.position) < 0.6) {
-          score.value += 1;
-          respawnTarget(target);
-          hit = true;
-          break;
-        }
-      }
-
-      if (hit || bullet.ttl <= 0) {
-        scene.remove(bullet.mesh);
-        bullet.mesh.geometry.dispose();
-        bullet.mesh.material.dispose();
-        bullets.splice(i, 1);
-      }
-    }
-
-    renderer.render(scene, camera);
-    raf = requestAnimationFrame(animate);
-  }
-
-  const dispose = (obj) => obj.traverse((n) => {
-    if (!n.isMesh) return;
-    n.geometry?.dispose();
-    [].concat(n.material).forEach((m) => m?.dispose());
-  });
+  };
 
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", onKeyDown);
-  window.addEventListener("keyup", onKeyUp);
-  window.addEventListener("mousemove", onMouseMove);
-  window.addEventListener("mousedown", onMouseDown);
-  window.addEventListener("mouseup", onMouseUp);
-  document.addEventListener("pointerlockchange", onPointerLockChange);
   resize();
   animate();
 
@@ -371,37 +466,10 @@ onMounted(async () => {
     cancelAnimationFrame(raf);
     window.removeEventListener("resize", resize);
     window.removeEventListener("keydown", onKeyDown);
-    window.removeEventListener("keyup", onKeyUp);
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mousedown", onMouseDown);
-    window.removeEventListener("mouseup", onMouseUp);
-    document.removeEventListener("pointerlockchange", onPointerLockChange);
-
-    for (const bullet of bullets) {
-      scene.remove(bullet.mesh);
-      bullet.mesh.geometry.dispose();
-      bullet.mesh.material.dispose();
-    }
-
-    for (const target of targets) {
-      scene.remove(target);
-      target.geometry.dispose();
-      target.material.dispose();
-    }
-
-    dispose(actor);
-    dispose(fpGun);
-    scene.remove(actor);
-    scene.remove(ground);
-    ground.geometry.dispose();
-    ground.material.dispose();
-
+    stats.dom.remove();
     renderer.dispose();
   };
 });
 
-onBeforeUnmount(() => {
-  cleanup();
-});
+onBeforeUnmount(() => cleanup());
 </script>
-
