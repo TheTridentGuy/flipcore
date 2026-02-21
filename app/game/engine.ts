@@ -69,6 +69,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
 
   function animate() {
     raf = requestAnimationFrame(animate);
+    gpad();
     const dt = Math.min(clock.getDelta(), 0.05);
 
     if (!state.started.value) {
@@ -230,6 +231,56 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     }
   }
 
+  // gpad
+  const gpButtonMap: Record<number, keyof typeof state.engines> = {
+    0: "right",
+    1: "bottom",
+    2: "top",
+    3: "left",
+  };
+  const pb = new Array(8).fill(false);
+
+  window.addEventListener("gamepadconnected", (e) => {
+    console.log(`gpad online at ${e.gamepad.id} (index ${e.gamepad.index}, ${e.gamepad.buttons.length} inputs, ${e.gamepad.axes.length} axes)`);
+  });
+  window.addEventListener("gamepaddisconnected", (e) => {
+    console.log(`gpad offline at ${e.gamepad.id}`);
+  });
+
+  function gpad() {
+    const gamepads = navigator.getGamepads();
+    for (const gp of gamepads) {
+      if (!gp) continue;
+      for (let i = 0; i < gp.buttons.length; i++) {
+        const pressed = gp.buttons[i].pressed;
+        if (pressed !== pb[i]) {
+          console.log(`gpad button B${i} ${pressed ? "on" : "off"} (value: ${gp.buttons[i].value})`);
+          if (!state.started.value && pressed) {
+            state.started.value = true;
+          }
+          const eng = gpButtonMap[i];
+          if (eng && state.started.value) {
+            state.engines[eng] = pressed;
+          }
+          if (i === 4 && pressed) state.kill();
+          if (i === 5 && pressed) {
+            pos.set(0, 0, 0); vel.set(0, 0, 0);
+            rocket.quaternion.identity(); state.kill();
+            tunnel.center.set(0, 0, 0); tunnel.dir.set(0, 0, -1);
+            state.tunnelWarning.value = 0;
+          }
+          pb[i] = pressed;
+        }
+      }
+      for (let i = 0; i < gp.axes.length; i++) {
+        if (Math.abs(gp.axes[i]) > 0.15) {
+          console.log(`gpad axis ${i}: ${gp.axes[i].toFixed(4)}`);
+        }
+      }
+      break;
+    }
+  }
+
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", onKeyDown);
   resize();
@@ -239,6 +290,8 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     cancelAnimationFrame(raf);
     window.removeEventListener("resize", resize);
     window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("gamepadconnected", () => {});
+    window.removeEventListener("gamepaddisconnected", () => {});
     stats.dom.remove();
     renderer.dispose();
   };
