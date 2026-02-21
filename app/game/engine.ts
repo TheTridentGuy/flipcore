@@ -14,19 +14,15 @@ interface GameState {
   speed: Ref<number>;
   started: Ref<boolean>;
   tunnelWarning: Ref<number>;
+  fps: Ref<number>;
   kill: () => void;
 }
 
 export async function init(canvas: HTMLCanvasElement, state: GameState) {
   const THREE = await import("three");
-  const { default: Stats } = await import("three/addons/libs/stats.module.js");
 
-  const stats = new Stats();
-  stats.showPanel(0);
-  Object.assign(stats.dom.style, {
-    position: "fixed", bottom: "8px", right: "8px", left: "auto", zIndex: "100000",
-  });
-  document.body.appendChild(stats.dom);
+  let fpsFrames = 0;
+  let fpsTime = performance.now();
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -66,9 +62,13 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
   const clock = new THREE.Clock();
   let raf = 0;
   const camTarget = new THREE.Vector3();
+  const frameDuration = 1000 / 60;
+  let lastFrameTime = 0;
 
-  function animate() {
+  function animate(time: number = 0) {
     raf = requestAnimationFrame(animate);
+    if (time - lastFrameTime < frameDuration) return;
+    lastFrameTime = time;
     gpad();
     const dt = Math.min(clock.getDelta(), 0.05);
 
@@ -85,7 +85,9 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
         tgt.position.y = tgt.userData.baseY + Math.sin(tgt.userData.phase) * 0.3;
       }
       renderer.render(scene, camera);
-      stats.update();
+      fpsFrames++;
+      const now = performance.now();
+      if (now - fpsTime >= 1000) { state.fps.value = fpsFrames; fpsFrames = 0; fpsTime = now; }
       return;
     }
 
@@ -195,7 +197,9 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     grid.position.z = Math.round(pos.z / 2.5) * 2.5;
 
     renderer.render(scene, camera);
-    stats.update();
+    fpsFrames++;
+    const now2 = performance.now();
+    if (now2 - fpsTime >= 1000) { state.fps.value = fpsFrames; fpsFrames = 0; fpsTime = now2; }
   }
 
   // resize
@@ -292,7 +296,6 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("gamepadconnected", () => {});
     window.removeEventListener("gamepaddisconnected", () => {});
-    stats.dom.remove();
     renderer.dispose();
   };
 }

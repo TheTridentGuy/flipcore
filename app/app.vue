@@ -17,7 +17,7 @@
     <div v-if="started" class="fixed top-4 left-4 font-mono pointer-events-none z-40">
       <p class="text-3xl font-bold text-white drop-shadow-lg">{{ score }}</p>
       <p class="text-[10px] text-white/40 tracking-widest">SCORE</p>
-      <p class="text-sm text-white/40 mt-2 tabular-nums">{{ speed.toFixed(1) }} <span class="text-[10px]">m/s</span></p>
+      <p class="text-sm text-white/40 mt-2 tabular-nums">{{ speed.toFixed(1) }} <span class="text-[10px]">m/s</span> · {{ fps }} <span class="text-[10px]">fps</span></p>
     </div>
 
     <div v-if="started" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
@@ -48,7 +48,7 @@ import { init } from "./game/engine";
 
 const canvasEl = ref(null);
 const btns = BTNS;
-const { score, speed, started, tunnelWarning, engines, kill, toggle } = useGameState();
+const { score, speed, fps, started, tunnelWarning, engines, kill, toggle } = useGameState();
 
 useHead({
   title: "Flipcore",
@@ -62,7 +62,7 @@ let cleanup = () => {};
 
 onMounted(async () => {
   if (!canvasEl.value) return;
-  cleanup = await init(canvasEl.value, { engines, score, speed, started, tunnelWarning, kill });
+  cleanup = await init(canvasEl.value, { engines, score, speed, fps, started, tunnelWarning, kill });
 });
 
 onBeforeUnmount(() => cleanup());

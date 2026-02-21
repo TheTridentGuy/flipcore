@@ -10,6 +10,7 @@ export const BTNS = [
 export function useGameState() {
   const score = ref(0);
   const speed = ref(0);
+  const fps = ref(0);
   const started = ref(false);
   const tunnelWarning = ref(0);
   const engines = reactive({ left: false, top: false, right: false, bottom: false });
@@ -23,5 +24,5 @@ export function useGameState() {
     engines[name] = !engines[name];
   }
 
-  return { score, speed, started, tunnelWarning, engines, kill, toggle };
+  return { score, speed, fps, started, tunnelWarning, engines, kill, toggle };
 }
