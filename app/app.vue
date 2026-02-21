@@ -7,7 +7,7 @@
       <h1 class="text-5xl font-bold text-white mb-2 tracking-tight">FLIPCORE</h1>
       <p class="text-lg text-white/50 mb-6">Your ship flies forward — toggle boosters to steer</p>
       <div class="text-white/60 font-mono text-sm space-y-1 text-center mb-8">
-        <p>Keys <span class="text-red-400 font-bold">1</span> <span class="text-yellow-300 font-bold">2</span> <span class="text-blue-400 font-bold">3</span> <span class=" text-green-400 font-bold">4</span> — tilt ship</p>
+        <p>Keys <span class="text-red-400 font-bold">1</span> <span class="text-yellow-300 font-bold">2</span> <span class="text-blue-400 font-bold">3</span> <span class="text-green-400 font-bold">4</span> — tilt ship</p>
         <p>SPACE — kill all</p>
         <p>R — reset pos</p>
       </div>
@@ -76,7 +76,7 @@ onMounted(async () => {
   const stats = new Stats();
   stats.showPanel(0);
   Object.assign(stats.dom.style, {
-    position: "fixed", bottom: "8px", right: "8px", left: "auto", zIndex: "100000", pointerEvents: "none",
+    position: "fixed", bottom: "8px", right: "8px", left: "auto", zIndex: "100000",
   });
   document.body.appendChild(stats.dom);
 
@@ -262,7 +262,8 @@ onMounted(async () => {
 
   function spawnBox(mesh) {
     const d = 25 + Math.random() * 40, a = Math.random() * Math.PI * 2, r = Math.random() * TUNNEL_RADIUS * 0.6;
-    const sp = tunnelCenter.clone().addScaledVector(tunnelDir, d);
+    const playerAxial = new THREE.Vector3().subVectors(pos, tunnelCenter).dot(tunnelDir);
+    const sp = tunnelCenter.clone().addScaledVector(tunnelDir, playerAxial + d);
     let p1 = new THREE.Vector3().crossVectors(tunnelDir, new THREE.Vector3(0, 1, 0));
     if (p1.lengthSq() < 0.01) p1.crossVectors(tunnelDir, new THREE.Vector3(1, 0, 0));
     p1.normalize();
@@ -354,10 +355,10 @@ onMounted(async () => {
     rocket.position.copy(pos);
     speed.value = vel.length();
 
-    tunnelDir.lerp(forward, 1.5 * dt).normalize();
-    const shipToCenter = new THREE.Vector3().subVectors(pos, tunnelCenter);
-    tunnelCenter.addScaledVector(tunnelDir, shipToCenter.dot(tunnelDir));
-    const lateralVec = new THREE.Vector3().subVectors(pos, tunnelCenter);
+    const shipOffset = new THREE.Vector3().subVectors(pos, tunnelCenter);
+    const axialDist = shipOffset.dot(tunnelDir);
+    const closestPoint = tunnelCenter.clone().addScaledVector(tunnelDir, axialDist);
+    const lateralVec = new THREE.Vector3().subVectors(pos, closestPoint);
     const lateralDist = lateralVec.length();
     if (lateralDist > TUNNEL_SOFT_EDGE) {
       const edge = Math.min((lateralDist - TUNNEL_SOFT_EDGE) / (TUNNEL_RADIUS - TUNNEL_SOFT_EDGE), 2);
@@ -369,8 +370,12 @@ onMounted(async () => {
     ringMat.color.copy(tunnelNormalColor).lerp(tunnelWarnColor, w);
     ringMat.opacity = 0.04 + w * 0.18;
 
+    const playerAxialRing = new THREE.Vector3().subVectors(pos, tunnelCenter).dot(tunnelDir);
+    const ringStep = 15;
+    const ringBase = Math.ceil(playerAxialRing / ringStep) * ringStep;
     for (let i = 0; i < tunnelRings.length; i++) {
-      const rp = tunnelCenter.clone().addScaledVector(tunnelDir, (i + 1) * 15);
+      const ringOffset = ringBase + i * ringStep;
+      const rp = tunnelCenter.clone().addScaledVector(tunnelDir, ringOffset);
       tunnelRings[i].position.copy(rp);
       tunnelRings[i].lookAt(rp.clone().add(tunnelDir));
     }
