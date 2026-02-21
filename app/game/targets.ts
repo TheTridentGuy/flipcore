@@ -73,5 +73,37 @@ export function lockheed(
     }
   }
 
-  return { targets, fxList, spawnBox, collectFX, updateFX };
+  const asteroids: THREE_NS.Mesh[] = [];
+
+  function spawnAsteroid(mesh?: THREE_NS.Mesh) {
+    const d = 100 + Math.random() * 60;
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * TUNNEL_RADIUS * 0.6;
+    const playerAxial = new THREE.Vector3().subVectors(pos, tunnel.center).dot(tunnel.dir);
+    const sp = tunnel.center.clone().addScaledVector(tunnel.dir, playerAxial + d);
+    let p1 = new THREE.Vector3().crossVectors(tunnel.dir, new THREE.Vector3(0, 1, 0));
+    if (p1.lengthSq() < 0.01) p1.crossVectors(tunnel.dir, new THREE.Vector3(1, 0, 0));
+    p1.normalize();
+    const p2 = new THREE.Vector3().crossVectors(tunnel.dir, p1).normalize();
+    sp.addScaledVector(p1, Math.cos(a) * r).addScaledVector(p2, Math.sin(a) * r);
+
+    if (mesh) { mesh.position.copy(sp); mesh.userData.baseY = sp.y; return mesh; }
+
+    const size = 1.2 + Math.random() * 0.6;
+    const m = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(size, 0),
+      new THREE.MeshStandardMaterial({ color: "#ff2222", emissive: "#ff2222", emissiveIntensity: 0.4, roughness: 0.6 }),
+    );
+    m.position.copy(sp);
+    m.userData.phase = Math.random() * Math.PI * 2;
+    m.userData.baseY = sp.y;
+    const l = new THREE.PointLight("#ff2222", 0.5, 6);
+    l.position.y = 0.5;
+    m.add(l);
+    scene.add(m);
+    asteroids.push(m);
+    return m;
+  }
+
+  return { targets, asteroids, fxList, spawnBox, spawnAsteroid, collectFX, updateFX };
 }

@@ -69,8 +69,9 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
   };
 
   // targets
-  const { targets, spawnBox, collectFX, updateFX } = lockheed(THREE, scene, tunnel, pos);
+  const { targets, asteroids, spawnBox, spawnAsteroid, collectFX, updateFX } = lockheed(THREE, scene, tunnel, pos);
   for (let i = 0; i < 14; i++) spawnBox();
+  for (let i = 0; i < 8; i++) spawnAsteroid();
 
   // explosion!!!
   const EXPLODE_COUNT = 120; // increase for low fps
@@ -158,6 +159,12 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
         tgt.userData.phase += dt;
         tgt.rotation.y += dt * 0.8;
         tgt.position.y = tgt.userData.baseY + Math.sin(tgt.userData.phase) * 0.3;
+      }
+      for (const a of asteroids) {
+        a.userData.phase += dt * 0.8;
+        a.rotation.x += dt * 0.5;
+        a.rotation.z += dt * 0.3;
+        a.position.y = a.userData.baseY + Math.sin(a.userData.phase) * 0.4;
       }
       renderer.render(scene, camera);
       fpsFrames++;
@@ -260,6 +267,23 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
       }
     }
 
+    // asteroids
+    for (const a of asteroids) {
+      a.userData.phase += dt * 0.8;
+      a.rotation.x += dt * 0.5;
+      a.rotation.z += dt * 0.3;
+      a.position.y = a.userData.baseY + Math.sin(a.userData.phase) * 0.4;
+      if (pos.distanceTo(a.position) < 2.2) {
+        state.dead.value = true;
+        state.kill();
+        triggerExplosion(pos.clone());
+        rocket.visible = false;
+        break;
+      } else if (_shipOffset.subVectors(a.position, pos).dot(_forward) < -30) {
+        spawnAsteroid(a);
+      }
+    }
+
     updateFX(dt);
 
     // camera
@@ -308,6 +332,7 @@ export async function init(canvas: HTMLCanvasElement, state: GameState) {
     explodePoints.visible = false;
     explodeTimer = 0;
     for (const t of targets) spawnBox(t);
+    for (const a of asteroids) spawnAsteroid(a);
     state.restart();
   }
 

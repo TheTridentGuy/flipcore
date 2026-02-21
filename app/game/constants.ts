@@ -9,4 +9,4 @@ export const TUNNEL_PUSH = 15;
 export const TUNNEL_KILL_EDGE = 11.75; // adjust to 13 if shits too hard
 export const SIDEWAYS_THRESHOLD = 0.2;
 
-export const BOX_COLORS = ["#ff6b6b", "#ffd93d", "#6bcbff", "#c084fc", "#4ade80", "#fb923c"];
+export const BOX_COLORS = ["#4ade80"];
